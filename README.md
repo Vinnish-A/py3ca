@@ -8,6 +8,7 @@ Python reimplementation of the 3CA NMF pipeline (Gavish et al., 2023).
 - Robust program filtering (within-sample, across-sample, non-redundant).
 - Greedy clustering into Meta-Programs (MPs).
 - MP scoring per cell with one-sample t-test and FDR correction.
+- Program scoring per cell from NMF loadings (per sample).
 
 ## Quick start
 
@@ -20,3 +21,8 @@ Python reimplementation of the 3CA NMF pipeline (Gavish et al., 2023).
 - `python run.py --data-dir /mnt/sdb/xzh/Vproject/TCA/data --out-dir /mnt/sdb/xzh/Vproject/TCA/py3ca/out`
 
 Outputs are written under the output directory.
+
+## Output highlights
+
+- `scores/<sample_id>_mp_scores.csv`: MP-level cell scores (`t_stat`, `p_value`, `fdr`).
+- `program_scores/<sample_id>_program_scores.csv`: program-level cell scores from NMF `W` loadings.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import numpy as np
 import pandas as pd
@@ -57,3 +57,51 @@ def score_mps(adata, mp_list: Dict[str, List[str]]) -> pd.DataFrame:
         return pd.DataFrame(columns=["cell_id", "meta_program", "t_stat", "p_value", "fdr"])
 
     return pd.concat(scores, ignore_index=True)
+
+
+def score_sample_programs(
+    sample_id: str,
+    study_id: str,
+    cell_ids: Sequence[str],
+    program_ids: Sequence[str],
+    k: int,
+    loadings: np.ndarray,
+) -> pd.DataFrame:
+    if loadings.ndim != 2:
+        raise ValueError("loadings must be a 2D matrix")
+    if loadings.shape[0] != len(cell_ids):
+        raise ValueError("Number of rows in loadings must match number of cells")
+    if loadings.shape[1] != len(program_ids):
+        raise ValueError("Number of columns in loadings must match number of programs")
+
+    component = np.arange(1, len(program_ids) + 1, dtype=int)
+    rows: List[pd.DataFrame] = []
+    for col_idx, program_id in enumerate(program_ids):
+        rows.append(
+            pd.DataFrame(
+                {
+                    "cell_id": cell_ids,
+                    "sample_id": sample_id,
+                    "study_id": study_id,
+                    "program_id": program_id,
+                    "k": k,
+                    "component": int(component[col_idx]),
+                    "program_score": loadings[:, col_idx],
+                }
+            )
+        )
+
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "cell_id",
+                "sample_id",
+                "study_id",
+                "program_id",
+                "k",
+                "component",
+                "program_score",
+            ]
+        )
+
+    return pd.concat(rows, ignore_index=True)

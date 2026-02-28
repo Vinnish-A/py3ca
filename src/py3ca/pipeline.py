@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ from sklearn.decomposition import NMF
 from .clustering import greedy_cluster
 from .io import collect_study_means, load_manifest, preprocess_sample
 from .robustness import select_robust_programs
-from .scoring import score_mps
+from .scoring import score_mps, score_sample_programs
 from .program_types import Program
 
 
@@ -23,11 +23,13 @@ def run_nmf_for_sample(
     k_min: int,
     k_max: int,
     random_state: int = 0,
-) -> List[Program]:
+) -> Tuple[List[Program], pd.DataFrame]:
     programs: List[Program] = []
+    program_score_frames: List[pd.DataFrame] = []
     gene_names = adata.var_names.to_list()
     gene_index = {g: i for i, g in enumerate(gene_names)}
     X = adata.X
+    cell_ids = adata.obs_names.to_list()
 
     for k in range(k_min, k_max + 1):
         model = NMF(
@@ -38,11 +40,12 @@ def run_nmf_for_sample(
         )
         W = model.fit_transform(X)
         H = model.components_
-        _ = W  # suppress unused
+        program_ids_for_k: List[str] = []
         for comp_idx, weights in enumerate(H):
             top_idx = np.argsort(weights)[::-1][:100]
             genes = [gene_names[i] for i in top_idx]
             program_id = f"{sample_id}.k{k}.c{comp_idx + 1}"
+            program_ids_for_k.append(program_id)
             programs.append(
                 Program(
                     program_id=program_id,
@@ -55,7 +58,31 @@ def run_nmf_for_sample(
                     gene_index=gene_index,
                 )
             )
-    return programs
+        program_score_frames.append(
+            score_sample_programs(
+                sample_id=sample_id,
+                study_id=study_id,
+                cell_ids=cell_ids,
+                program_ids=program_ids_for_k,
+                k=k,
+                loadings=W,
+            )
+        )
+    if program_score_frames:
+        program_scores = pd.concat(program_score_frames, ignore_index=True)
+    else:
+        program_scores = pd.DataFrame(
+            columns=[
+                "cell_id",
+                "sample_id",
+                "study_id",
+                "program_id",
+                "k",
+                "component",
+                "program_score",
+            ]
+        )
+    return programs, program_scores
 
 
 def run_pipeline(
@@ -80,6 +107,7 @@ def run_pipeline(
     all_programs: List[Program] = []
     preprocessed_cache: Dict[str, object] = {}
     components_by_sample: Dict[str, List[str]] = {}
+    program_scores_by_sample: Dict[str, pd.DataFrame] = {}
 
     for row in manifest.itertuples(index=False):
         sample_id = str(row.sample_id)
@@ -87,7 +115,7 @@ def run_pipeline(
         path = str(row.path)
         _, adata = preprocess_sample(path, study_means[study_id], top_genes)
         preprocessed_cache[sample_id] = adata
-        programs = run_nmf_for_sample(
+        programs, program_scores = run_nmf_for_sample(
             adata,
             sample_id=sample_id,
             study_id=study_id,
@@ -96,6 +124,7 @@ def run_pipeline(
         )
         all_programs.extend(programs)
         components_by_sample[sample_id] = [p.program_id for p in programs]
+        program_scores_by_sample[sample_id] = program_scores
 
     programs_df = pd.DataFrame(
         [
@@ -194,6 +223,14 @@ def run_pipeline(
     for sample_id, adata in preprocessed_cache.items():
         scores = score_mps(adata, mp_list)
         scores.to_csv(os.path.join(scores_dir, f"{sample_id}_mp_scores.csv"), index=False)
+
+    program_scores_dir = os.path.join(out_dir, "program_scores")
+    os.makedirs(program_scores_dir, exist_ok=True)
+    for sample_id, program_scores in program_scores_by_sample.items():
+        program_scores.to_csv(
+            os.path.join(program_scores_dir, f"{sample_id}_program_scores.csv"),
+            index=False,
+        )
 
 
 def main() -> None:
