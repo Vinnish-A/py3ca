@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict, FrozenSet, List
 
 import numpy as np
 
@@ -16,7 +16,7 @@ class Program:
     genes: List[str]
     weights: np.ndarray
     gene_index: Dict[str, int]
+    gene_set: FrozenSet[str] = field(init=False)
 
-    @property
-    def gene_set(self) -> set:
-        return set(self.genes)
+    def __post_init__(self) -> None:
+        self.gene_set = frozenset(self.genes)
